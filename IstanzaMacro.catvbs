@@ -1,0 +1,115 @@
+' ============================================================
+' xyzEkvi - CATIA V5 R19
+' Versione: v.1.0
+' ============================================================
+
+Option Explicit
+
+Sub CATMain()
+
+    ' =========================================================
+    ' 0. PULIZIA MEMORIA INIZIALE
+    ' =========================================================
+    On Error Resume Next
+    CATIA.ClearUndo
+    CATIA.StartCommand "Clear History"
+    Err.Clear
+    On Error GoTo 0
+
+    Dim TITOLO
+    TITOLO = "xyzEkvi - CATIA R19"
+
+    Dim activeDoc
+    Set activeDoc = CATIA.ActiveDocument
+
+    If activeDoc Is Nothing Then
+        MsgBox "Nessun documento attivo in CATIA.", 16, TITOLO
+        Exit Sub
+    End If
+
+    If InStr(LCase(activeDoc.Name), ".catproduct") = 0 Then
+        MsgBox "Il documento attivo non e' un CATProduct.", 16, TITOLO
+        Exit Sub
+    End If
+
+    Dim rootProduct
+    Set rootProduct = activeDoc.Product
+
+    ' =========================================================
+    ' 1. SISTEMA DI ORDINAMENTO SUL LIVELLO PRINCIPALE
+    Dim oDictionary
+    Set oDictionary = CreateObject("Scripting.Dictionary")
+    
+    Dim i, itemToRename, itemPartNum
+    For i = 1 To rootProduct.Products.Count
+        Set itemToRename = rootProduct.Products.Item(i)
+        itemPartNum = itemToRename.PartNumber
+        
+        If itemPartNum <> "" Then
+            On Error Resume Next
+            ' Se il PartNumber contiene -axs, lascia il nome pulito senza suffisso .1
+            If InStr(LCase(itemPartNum), "-axs") > 0 Then
+                itemToRename.Name = itemPartNum
+            Else
+                If oDictionary.Exists(itemPartNum) Then
+                    oDictionary.Item(itemPartNum) = oDictionary.Item(itemPartNum) + 1
+                Else
+                    oDictionary.Add itemPartNum, 1
+                End If
+                itemToRename.Name = itemPartNum & "." & oDictionary.Item(itemPartNum)
+            End If
+            Err.Clear
+            On Error GoTo 0
+        End If
+    Next
+
+    ' =========================================================
+    ' 2. CONTROLLO E CORREZIONE DENTRO I SOTTO-PRODOTTI
+    For i = 1 To rootProduct.Products.Count
+        Set itemToRename = rootProduct.Products.Item(i)
+        
+        If itemToRename.Products.Count > 0 Then
+            Dim subDoc, subProduct, subDict, j, subItem, subPartNum
+            
+            On Error Resume Next
+            Set subDoc = itemToRename.ReferenceProduct.Parent
+            Err.Clear
+            On Error GoTo 0
+            
+            If Not subDoc Is Nothing Then
+                subDoc.Activate
+                Set subProduct = subDoc.Product
+                
+                Set subDict = CreateObject("Scripting.Dictionary")
+                
+                For j = 1 To subProduct.Products.Count
+                    Set subItem = subProduct.Products.Item(j)
+                    subPartNum = subItem.PartNumber
+                    
+                    If subPartNum <> "" Then
+                        On Error Resume Next
+                        ' Esclude il suffisso numerico anche per le parti -axs nei sotto-prodotti
+                        If InStr(LCase(subPartNum), "-axs") > 0 Then
+                            subItem.Name = subPartNum
+                        Else
+                            If subDict.Exists(subPartNum) Then
+                                subDict.Item(subPartNum) = subDict.Item(subPartNum) + 1
+                            Else
+                                subDict.Add subPartNum, 1
+                            End If
+                            subItem.Name = subPartNum & "." & subDict.Item(subPartNum)
+                        End If
+                        Err.Clear
+                        On Error GoTo 0
+                    End If
+                Next
+                
+                subProduct.Update
+            End If
+        End If
+    Next
+
+    activeDoc.Activate
+    rootProduct.Update
+
+End Sub
